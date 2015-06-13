@@ -378,7 +378,9 @@ enum
         wasn't delivered for some reason.
         ERR_NOTOPLEVEL and ERR_WILDTOPLEVEL are errors that are returned
         when an invalid use of "PRIVMSG $<server>" or "PRIVMSG #<host>" is attempted.
+        ERR_INVALIDCAPCMD is an error returned upon issuing an invalid capability command.
     +/
+    ERR_INVALIDCAPCMD = 410,
     ERR_NORECIPIENT = 411,
     ERR_NOTEXTTOSEND = 412,  ///ditto
     ERR_NOTOPLEVEL = 413,  ///ditto
@@ -430,6 +432,12 @@ enum
         (registered of a NICK that already exists by another server).
     +/
     ERR_NICKCOLLISION = 436,
+
+    /++
+        Returned by a server to a client when an invalid command is issued
+        before registration is complete.
+    +/
+    ERR_NOTREGISTERED = 451,
 }
 
 enum
@@ -466,6 +474,15 @@ struct ConnectionParameters
     string password = null; ///The _password for the server, if any.
     string username = "vibeIRC"; ///The _username, later used by the server in this connection's hostmask.
     string realname = null; ///The _realname as returned by the WHOIS command.
+}
+
+/++
+    A struct containing details about an available capability
++/
+struct Capability
+{
+    string id; ///identifier for this capability
+    string argument; ///argument for the capability
 }
 
 /++
@@ -528,6 +545,7 @@ class IRCConnection
     bool buffering = false; ///Whether to buffer outgoing messages.
     uint bufferLimit = 20; ///Maximum number of messages to send per time period, if buffering is enabled.
     Duration bufferTimeout = dur!"seconds"(30); ///Amount of time to wait before sending each batch of messages, if buffering is enabled.
+    Capability[] EnabledCapabilities;
     
     /++
         Default constructor. Should not be called from user code.
@@ -553,6 +571,8 @@ class IRCConnection
         
         if(connected)
         {
+            send_line("CAP LS");
+
             if(connectionParameters.password != null)
                 send_line("PASS %s", connectionParameters.password);
             
@@ -670,11 +690,59 @@ class IRCConnection
                 user_kicked(prefix.split_userinfo, parts[1], parts[0], parts[2 .. $].join.drop_first);
                 
                 break;
+            case "CAP":
+                handle_capabilities(parts);
+
+                break;
             default:
                 unknown_command(prefix, command, parts);
         }
     }
     
+    private void handle_capabilities(string[] parts)
+    {
+        import vibe.core.log : logInfo;
+        import std.array : join;
+        switch (parts[1]) {
+            case "LS":
+                Capability[] Capabilities = [];
+                auto arguments_position = 2;
+                if (parts[2] == "*")
+                    arguments_position++;
+                logInfo("CAPS: %(%s %)", [parts[arguments_position][1..$]]~parts[arguments_position+1..$]);
+                foreach (cap; [parts[arguments_position][1..$]]~parts[arguments_position+1..$])
+                {
+                    auto new_capability = Capability(cap);
+                    auto split_capability = cap.split("=");
+                    if(split_capability.length > 1)
+                        new_capability.argument = split_capability[1..$].join("=");
+                    Capabilities ~= new_capability;
+                }
+                if (parts[2] != "*") {
+                    foreach(capability; Capabilities)
+                    {
+                        switch(capability.id)
+                        {
+                            case "multi-prefix":
+                                EnabledCapabilities ~= capability;
+                                send_line("CAP REQ :multi-prefix");
+                                break;
+                            case "userhost-in-names":
+                                EnabledCapabilities ~= capability;
+                                send_line("CAP REQ :userhost-in-names");
+                                break;
+                            default: break;
+                        }
+                    }
+                    send_line("CAP END");
+                }
+                break;
+            case "NAK":
+                logDebug("Capabilities rejected: %(%s %)", parts[2..$]);
+                break;
+            default: break;
+        }
+    }
     private void handle_numeric(string prefix, int id, string[] parts)
     {
         version(IrcDebugLogging) logDebug("handle_numeric(%s, %s, %s)", prefix, id, parts);
