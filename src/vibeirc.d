@@ -731,6 +731,18 @@ class IRCConnection
                                 EnabledCapabilities ~= capability;
                                 send_line("CAP REQ :userhost-in-names");
                                 break;
+                            case "account-notify":
+                                EnabledCapabilities ~= capability;
+                                send_line("CAP REQ :account-notify");
+                                break;
+                            case "away-notify":
+                                EnabledCapabilities ~= capability;
+                                send_line("CAP REQ :away-notify");
+                                break;
+                            case "extended-join":
+                                EnabledCapabilities ~= capability;
+                                send_line("CAP REQ :extended-join");
+                                break;
                             default: break;
                         }
                     }
