@@ -463,7 +463,22 @@ enum
     LIGHTGREY = "15", ///ditto
     TRANSPARENT = "99", ///ditto
 }
-
+/++
+    IRC capabilities supported by this library.
++/
+enum supportedCapabilities = [
+    "multi-prefix",
+    "userhost-in-names",
+    "account-notify",
+    "away-notify",
+    "extended-join",
+    "echo-message",
+    "cap-notify",
+    "chghost",
+    "account-tag",
+    "server-time",
+    "invite-notify"
+];
 /++
     A struct containing details about a connection.
 +/
@@ -701,60 +716,88 @@ class IRCConnection
     
     private void handle_capabilities(string[] parts)
     {
-        import vibe.core.log : logInfo;
-        import std.array : join;
+        import std.algorithm : canFind, countUntil, remove, SwapStrategy;
         switch (parts[1]) {
             case "LS":
-                Capability[] Capabilities = [];
                 auto arguments_position = 2;
                 if (parts[2] == "*")
                     arguments_position++;
-                logInfo("CAPS: %(%s %)", [parts[arguments_position][1..$]]~parts[arguments_position+1..$]);
-                foreach (cap; [parts[arguments_position][1..$]]~parts[arguments_position+1..$])
-                {
-                    auto new_capability = Capability(cap);
-                    auto split_capability = cap.split("=");
-                    if(split_capability.length > 1)
-                        new_capability.argument = split_capability[1..$].join("=");
-                    Capabilities ~= new_capability;
-                }
+                foreach(capability; enumerate_capabilities(parts[arguments_position..$]))
+                    if (supportedCapabilities.canFind(capability.id))
+                        enable_capability(capability);
                 if (parts[2] != "*") {
-                    foreach(capability; Capabilities)
-                    {
-                        switch(capability.id)
-                        {
-                            case "multi-prefix":
-                                EnabledCapabilities ~= capability;
-                                send_line("CAP REQ :multi-prefix");
-                                break;
-                            case "userhost-in-names":
-                                EnabledCapabilities ~= capability;
-                                send_line("CAP REQ :userhost-in-names");
-                                break;
-                            case "account-notify":
-                                EnabledCapabilities ~= capability;
-                                send_line("CAP REQ :account-notify");
-                                break;
-                            case "away-notify":
-                                EnabledCapabilities ~= capability;
-                                send_line("CAP REQ :away-notify");
-                                break;
-                            case "extended-join":
-                                EnabledCapabilities ~= capability;
-                                send_line("CAP REQ :extended-join");
-                                break;
-                            default: break;
-                        }
-                    }
                     send_line("CAP END");
                 }
                 break;
             case "NAK":
                 logDebug("Capabilities rejected: %(%s %)", parts[2..$]);
                 break;
+            case "ACK":
+                foreach (new_cap; enumerate_capabilities(parts[2..$]))
+                {
+                    if (new_cap.disabled)
+                    {
+                        auto position = countUntil(EnabledCapabilities, new_cap);
+                        if (position == -1) {
+                            logDebug("Attempt to disable nonexistent capability");
+                            continue;
+                        }
+                        EnabledCapabilities = EnabledCapabilities.remove!(SwapStrategy.unstable)(position);
+                    }
+                    else
+                    {
+                        EnabledCapabilities ~= new_cap;
+                        logDebug("Capability accepted: %s", new_cap);
+                    }
+                }
+                break;
+            case "NEW":
+                foreach(capability; enumerate_capabilities(parts[2..$]))
+                    if (supportedCapabilities.canFind(capability.id))
+                        enable_capability(capability);
+                break;
+            case "DEL":
+                auto Capabilities = enumerate_capabilities(parts[2..$]);
+                break;
             default: break;
         }
     }
+    private Capability[] enumerate_capabilities(string[] parts)
+    {
+        import vibe.core.log : logInfo;
+        import std.array : join;
+        Capability[] Capabilities = [];
+        foreach (cap; [parts[0][1..$]]~parts[0+1..$])
+        {
+            auto new_capability = Capability();
+            if (cap[0] == '-')
+            {
+                new_capability.disabled = true;
+                cap = cap[1..$];
+            }
+            new_capability.id = cap;
+            auto split_capability = cap.split("=");
+            if(split_capability.length > 1)
+                new_capability.argument = split_capability[1..$].join("=");
+            Capabilities ~= new_capability;
+        }
+        return Capabilities;
+    }
+
+    private void enable_capability(Capability cap)
+    {
+        cap.disabled = false;
+        send_line("CAP REQ :%s", cap);
+    }
+
+    private void disable_capability(Capability cap)
+    in { import std.algorithm : canFind; assert(EnabledCapabilities.canFind(cap)); }
+    body
+    {
+        cap.disabled = true;
+        send_line("CAP REQ :%s", cap);
+    }
+
     private void handle_numeric(string prefix, int id, string[] parts)
     {
         version(IrcDebugLogging) logDebug("handle_numeric(%s, %s, %s)", prefix, id, parts);
