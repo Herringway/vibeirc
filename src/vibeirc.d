@@ -518,6 +518,8 @@ struct User
     string nickname; ///The _nickname of this user.
     string username; ///The _username portion of this user's hostmask.
     string hostname; ///The _hostname portion of this user's hostmask.
+    string realname; ///The _realname of this user. Availability varies by server.
+    string account; ///The _account for this user. Availability varies by server.
 }
 
 /++
