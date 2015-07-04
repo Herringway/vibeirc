@@ -498,6 +498,16 @@ struct Capability
 {
     string id; ///identifier for this capability
     string argument; ///argument for the capability
+    bool disabled; ///Whether or not the capability is being disabled
+    string toString() {
+        string output = "";
+        if (disabled)
+            output ~= "-";
+        output ~= id;
+        if (argument != "")
+            output ~= argument;
+        return output;
+    }
 }
 
 /++
