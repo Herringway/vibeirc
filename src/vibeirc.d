@@ -571,7 +571,7 @@ class IRCConnection
         
         if(connected)
         {
-            send_line("CAP LS");
+            send_line("CAP LS 302");
 
             if(connectionParameters.password != null)
                 send_line("PASS %s", connectionParameters.password);
