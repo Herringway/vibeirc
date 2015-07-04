@@ -649,9 +649,23 @@ class IRCConnection
     private void line_received(string line)
     {
         import std.conv: ConvException, to;
+        import std.array : join;
         
         string[] parts = line.split(" ");
+
+        string[string] tags;
         
+        if(parts[0][0] == '@') {
+            auto tag_list = parts[0][1..$].split(";");
+            foreach(tag; tag_list) {
+                auto tag_parts = tag.split("=");
+                if (tag_parts.length > 1)
+                    tags[tag_parts[0]] = tag_parts[1..$].join("=");
+                else
+                    tags[tag_parts[0]] = "present";
+            }
+            parts = parts.drop_first;
+        }
         switch(parts[0])
         {
             case "PING":
@@ -955,6 +969,29 @@ class IRCConnection
             version(IrcDebugLogging) logDebug("irc send: %s", contents);
             transport.write(contents ~ "\r\n");
         }
+    }
+    /++
+        Send a formatted line with tags.
+        
+        Params:
+            contents = format string for the line
+            args = formatting arguments
+    +/
+    final void send_line(Args...)(string[string] tags, string contents, Args args)
+    in { assert(transport && transport.connected); }
+    body
+    {
+        import std.algorithm : map;
+        import std.array : replace;
+        string[] tagList;
+        foreach(tag, value; tags.map!((x) => x.replace(`\`, `\\`).replace(" ", `\s`).replace("\n", `\n`).replace("\r", `\r`).replace(";", `\;`)))
+        {
+            if (value == "")
+                tagList ~= "@"~tag;
+            else
+                tagList ~= format("@%s=%s", tag, value);
+        }
+        send_line("%s"~contents, tagList.join(";"), args);
     }
     
     /++
