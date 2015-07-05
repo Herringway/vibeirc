@@ -712,7 +712,12 @@ class IRCConnection
                 
                 break;
             case "JOIN":
-                user_joined(prefix.split_userinfo, parts[0].drop_first);
+                auto joined_user = prefix.split_userinfo;
+                if (parts.length > 1)
+                    joined_user.account = parts[1];
+                if (parts.length > 2)
+                    joined_user.realname = parts[2..$].join.drop_first;
+                user_joined(joined_user, parts[0].drop_first);
                 
                 break;
             case "PART":
