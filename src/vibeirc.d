@@ -540,6 +540,14 @@ struct Message
         return ctcpCommand != null;
     }
 }
+/++
+    A struct containing the miscellaneous bits of a received line
++/
+struct Context
+{
+    string raw; ///The raw string as sent by the server
+    string[string] tags; ///Message tags attached to the message
+}
 
 //Thrown from line_received, handle_numeric or handle_command in case of an error
 private class GracelessDisconnect: Exception
@@ -653,16 +661,18 @@ class IRCConnection
         
         string[] parts = line.split(" ");
 
-        string[string] tags;
+        Context context;
+
+        context.raw = line;
         
         if(parts[0][0] == '@') {
             auto tag_list = parts[0][1..$].split(";");
             foreach(tag; tag_list) {
                 auto tag_parts = tag.split("=");
                 if (tag_parts.length > 1)
-                    tags[tag_parts[0]] = tag_parts[1..$].join("=");
+                    context.tags[tag_parts[0]] = tag_parts[1..$].join("=");
                 else
-                    tags[tag_parts[0]] = "present";
+                    context.tags[tag_parts[0]] = "present";
             }
             parts = parts.drop_first;
         }
@@ -678,13 +688,13 @@ class IRCConnection
                 parts[0] = parts[0].drop_first;
                 
                 try
-                    handle_numeric(parts[0], parts[1].to!int, parts[2 .. $]);
+                    handle_numeric(context, parts[0], parts[1].to!int, parts[2 .. $]);
                 catch(ConvException err)
-                    handle_command(parts[0], parts[1], parts[2 .. $]);
+                    handle_command(context, parts[0], parts[1], parts[2 .. $]);
         }
     }
     
-    private void handle_command(string prefix, string command, string[] parts)
+    private void handle_command(Context context, string prefix, string command, string[] parts)
     {
         version(IrcDebugLogging) logDebug("handle_command(%s, %s, %s)", prefix, command, parts);
         
@@ -706,9 +716,9 @@ class IRCConnection
                 }
                 
                 if(command == "NOTICE")
-                    notice(msg);
+                    notice(msg, context);
                 else
-                    privmsg(msg);
+                    privmsg(msg, context);
                 
                 break;
             case "JOIN":
@@ -717,35 +727,35 @@ class IRCConnection
                     joined_user.account = parts[1];
                 if (parts.length > 2)
                     joined_user.realname = parts[2..$].join.drop_first;
-                user_joined(joined_user, parts[0].drop_first);
+                user_joined(joined_user, context, parts[0].drop_first);
                 
                 break;
             case "PART":
-                user_left(prefix.split_userinfo, parts[0], parts.drop_first.join.drop_first);
+                user_left(prefix.split_userinfo, context, parts[0], parts.drop_first.join.drop_first);
                 
                 break;
             case "QUIT":
-                user_quit(prefix.split_userinfo, parts.join.drop_first);
+                user_quit(prefix.split_userinfo, context, parts.join.drop_first);
                 
                 break;
             case "NICK":
-                user_renamed(prefix.split_userinfo, parts[0].drop_first);
+                user_renamed(prefix.split_userinfo, context, parts[0].drop_first);
                 
                 break;
             case "KICK":
-                user_kicked(prefix.split_userinfo, parts[1], parts[0], parts[2 .. $].join.drop_first);
+                user_kicked(prefix.split_userinfo, context, parts[1], parts[0], parts[2 .. $].join.drop_first);
                 
                 break;
             case "CAP":
-                handle_capabilities(parts);
+                handle_capabilities(parts, context);
 
                 break;
             default:
-                unknown_command(prefix, command, parts);
+                unknown_command(prefix, context, command, parts);
         }
     }
     
-    private void handle_capabilities(string[] parts)
+    private void handle_capabilities(string[] parts, Context context)
     {
         import std.algorithm : canFind, countUntil, remove, SwapStrategy;
         switch (parts[1]) {
@@ -829,7 +839,7 @@ class IRCConnection
         send_line("CAP REQ :%s", cap);
     }
 
-    private void handle_numeric(string prefix, int id, string[] parts)
+    private void handle_numeric(Context context, string prefix, int id, string[] parts)
     {
         version(IrcDebugLogging) logDebug("handle_numeric(%s, %s, %s)", prefix, id, parts);
         
@@ -950,7 +960,7 @@ class IRCConnection
         
         if(Task.getThis !is protocolTask)
             protocolTask.join;
-        
+
         transport.close;
     }
     
@@ -1025,10 +1035,11 @@ class IRCConnection
         
         Params:
             prefix = origin of the _command, either a server or a user
+            context = context of the _command
             command = the name of the _command
             arguments = the body of the _command
     +/
-    void unknown_command(string prefix, string command, string[] arguments) {}
+    void unknown_command(string prefix, Context context, string command, string[] arguments) {}
     
     /++
         Called when an unknown numeric command is received.
@@ -1065,6 +1076,9 @@ class IRCConnection
     /++
         Called upon reception of an incoming private message.
     +/
+    void privmsg(Message message, Context context) {
+        privmsg(message);
+    }
     void privmsg(Message message) {}
     
     /++
@@ -1072,21 +1086,33 @@ class IRCConnection
         
         A _notice is similar to a privmsg, except it is expected to not generate automatic replies.
     +/
+    void notice(Message message, Context context) {
+        notice(message);
+    }
     void notice(Message message) {}
     
     /++
         Called when a _user joins a _channel.
     +/
+    void user_joined(User user, Context context, string channel) {
+        user_joined(user, channel);
+    }
     void user_joined(User user, string channel) {}
     
     /++
         Called when a _user leaves a _channel.
     +/
+    void user_left(User user, Context context, string channel, string reason) {
+        user_left(user, channel, reason);
+    }
     void user_left(User user, string channel, string reason) {}
     
     /++
         Called when a _user disconnects from the network.
     +/
+    void user_quit(User user, Context context, string reason) {
+        user_quit(user, reason);
+    }
     void user_quit(User user, string reason) {}
     
     /++
@@ -1096,11 +1122,17 @@ class IRCConnection
             kicker = the _user that performed the kick
             user = the _user that was kicked
     +/
+    void user_kicked(User kicker, Context context, string user, string channel, string reason) {
+        user_kicked(kicker, user, channel, reason);
+    }
     void user_kicked(User kicker, string user, string channel, string reason) {}
     
     /++
         Called when a _user changes their nickname.
     +/
+    void user_renamed(User user, Context context, string oldNick) {
+        user_renamed(user, oldNick);
+    }
     void user_renamed(User user, string oldNick) {}
 }
 
