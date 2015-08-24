@@ -751,6 +751,15 @@ class IRCConnection
                 handle_capabilities(parts, context);
 
                 break;
+            case "ACCOUNT":
+                if (parts[0] == "*")
+                    user_logout(prefix.split_userinfo);
+                else {
+                    auto userdata = prefix.split_userinfo;
+                    userdata.account = parts[0];
+                    user_login(userdata);
+                }
+                break;
             default:
                 unknown_command(prefix, context, command, parts);
         }
@@ -1139,6 +1148,14 @@ class IRCConnection
         user_renamed(user, oldNick);
     }
     void user_renamed(User user, string oldNick) {}
+    /++
+        Called when a _user identifies to their nickname.
+    +/
+    void user_login(User user) {}
+    /++
+        Called when a _user is no longer identified for their nickname.
+    +/
+    void user_logout(User user) {}
 }
 
 /++
