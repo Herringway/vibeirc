@@ -27,6 +27,8 @@ private
     import std.string: split, format;
     
     import vibe.core.stream: InputStream;
+
+    import std.typecons : Nullable;
 }
 
 private enum CTCP_ENCAPSULATOR = '\x01';
@@ -46,6 +48,11 @@ enum
         This is often used when the connection is refused because the server is already full.
     +/
     RPL_BOUNCE = 005,
+
+    /++
+        Sent by the server to describe aspects that differ from RFC1459.
+    +/
+    RPL_ISUPPORT = 005,
     
     /++
         Reply format used by USERHOST to list replies to the query list.
@@ -479,6 +486,12 @@ enum supportedCapabilities = [
     "server-time",
     "invite-notify"
 ];
+
+/++
+    RFC1459 Channel Modes
++/
+enum RFC1459ChannelModes = "b,kov,l,psitnm";
+
 /++
     A struct containing details about a connection.
 +/
@@ -548,7 +561,16 @@ struct Context
     string raw; ///The raw string as sent by the server
     string[string] tags; ///Message tags attached to the message
 }
-
+struct ModeChange
+{
+    bool set;
+    char mode;
+    Nullable!string argument;
+    string toString()
+    {
+        return (set ? "+" : "-") ~ mode ~ (argument.isNull() ? "" : " " ~argument);
+    }
+}
 //Thrown from line_received, handle_numeric or handle_command in case of an error
 private class GracelessDisconnect: Exception
 {
@@ -580,7 +602,8 @@ class IRCConnection
     bool buffering = false; ///Whether to buffer outgoing messages.
     uint bufferLimit = 20; ///Maximum number of messages to send per time period, if buffering is enabled.
     Duration bufferTimeout = dur!"seconds"(30); ///Amount of time to wait before sending each batch of messages, if buffering is enabled.
-    Capability[] EnabledCapabilities;
+    Capability[] EnabledCapabilities; ///Additional functionality agreed to by both server and client.
+    string[string] ISupport; ///Differences between server's protocol and RFC1459.
     
     /++
         Default constructor. Should not be called from user code.
@@ -697,6 +720,7 @@ class IRCConnection
     
     private void handle_command(Context context, string prefix, string command, string[] parts)
     {
+        import std.algorithm : canFind;
         version(IrcDebugLogging) logDebug("handle_command(%s, %s, %s)", prefix, command, parts);
         
         switch(command)
@@ -749,6 +773,43 @@ class IRCConnection
                 break;
             case "TOPIC":
                 topic_change(prefix.split_userinfo, parts[0], parts[1..$].join.drop_first);
+
+                break;
+            case "MODE":
+                ModeChange[] modes;
+                bool mode_set;
+                uint mode_argument_offset = 2;
+                foreach (mode; parts[1]) {
+                    if (mode == '+')
+                    {
+                        mode_set = true;
+                        continue;
+                    }
+                    if (mode == '-')
+                    {
+                        mode_set = false;
+                        continue;
+                    }
+                    ModeChange new_mode;
+                    new_mode.set = mode_set;
+                    new_mode.mode = mode;
+                    string mode_string = RFC1459ChannelModes;
+                    if ("CHANMODES" in ISupport)
+                        mode_string = ISupport["CHANMODES"];
+
+                    auto split_mode_string = mode_string.split(",");
+
+                    if ("PREFIX" in ISupport)
+                        split_mode_string[1] ~= ISupport["PREFIX"].split("(")[1].split(")")[0];
+
+                    if (split_mode_string[0].canFind(mode) || split_mode_string[1].canFind(mode) || (mode_set && split_mode_string[2].canFind(mode)))
+                    {
+                        new_mode.argument = parts[mode_argument_offset++];
+                    }
+
+                    modes ~= new_mode;
+                }
+                mode_change(prefix.split_userinfo, parts[0], modes);
 
                 break;
             case "CAP":
@@ -874,6 +935,19 @@ class IRCConnection
             case RPL_WELCOME:
                 signed_on;
                 
+                break;
+            case RPL_ISUPPORT:
+                foreach (part; parts)
+                {
+                    if (part[0] == ':')
+                        break;
+                    auto split_part = part.split("=");
+                    if (split_part.length > 1)
+                        ISupport[split_part[0]] = split_part[1];
+                    else
+                        ISupport[split_part[0]] = "true";
+                }
+
                 break;
             case ERR_ERRONEUSNICKNAME:
                 throw new GracelessDisconnect("Erroneus nickname"); //TODO: handle gracefully?
@@ -1190,6 +1264,12 @@ class IRCConnection
         Called when a channel topic changes.
     +/
     void topic_change(User user, string channel, string newTopic) {}
+    /++
+        Called when a mode change occurs.
+    +/
+    void mode_change(User user, string target, ModeChange[] modes) {
+
+    }
 }
 
 /++
