@@ -739,7 +739,7 @@ class IRCConnection
                 
                 break;
             case "NICK":
-                user_renamed(prefix.split_userinfo, context, parts[0].drop_first);
+                user_renamed(prefix.split_userinfo, context, parts[0]);
                 
                 break;
             case "KICK":
