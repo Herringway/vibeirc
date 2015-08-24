@@ -768,6 +768,10 @@ class IRCConnection
                     user_away(prefix.split_userinfo, parts.join.drop_first);
 
                 break;
+            case "METADATA":
+                metadata_update(parts[0], parts[1], parts[2], parts[3..$].join.drop_first);
+
+                break;
             default:
                 unknown_command(prefix, context, command, parts);
         }
@@ -1172,6 +1176,11 @@ class IRCConnection
         Called when a _user is no longer away.
     +/
     void user_back(User user) {}
+
+    /++
+        Called when a metadata update occurs.
+    +/
+    void metadata_update(string target, string visibility, string key, string value) {}
 }
 
 /++
