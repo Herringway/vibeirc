@@ -561,6 +561,9 @@ struct Context
     string raw; ///The raw string as sent by the server
     string[string] tags; ///Message tags attached to the message
 }
+/++
+    A struct containing details on a mode change.
++/
 struct ModeChange
 {
     bool set;
