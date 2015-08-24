@@ -759,6 +759,14 @@ class IRCConnection
                     userdata.account = parts[0];
                     user_login(userdata);
                 }
+
+                break;
+            case "AWAY":
+                if (parts.length == 0)
+                    user_back(prefix.split_userinfo);
+                else
+                    user_away(prefix.split_userinfo, parts.join.drop_first);
+
                 break;
             default:
                 unknown_command(prefix, context, command, parts);
@@ -1156,6 +1164,14 @@ class IRCConnection
         Called when a _user is no longer identified for their nickname.
     +/
     void user_logout(User user) {}
+    /++
+        Called when a _user is away.
+    +/
+    void user_away(User user, string message) {}
+    /++
+        Called when a _user is no longer away.
+    +/
+    void user_back(User user) {}
 }
 
 /++
