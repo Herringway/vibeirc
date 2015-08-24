@@ -658,6 +658,7 @@ class IRCConnection
     {
         import std.conv: ConvException, to;
         import std.array : join;
+        raw(line);
         
         string[] parts = line.split(" ");
 
@@ -1062,6 +1063,10 @@ class IRCConnection
     {
         return true;
     }
+    /++
+        Called after receiving a line of text from the network.
+    +/
+    void raw(string text) {}
     
     /++
         Called after being _disconnected from the network.
