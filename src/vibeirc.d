@@ -747,6 +747,10 @@ class IRCConnection
                 user_kicked(prefix.split_userinfo, context, parts[1], parts[0], parts[2 .. $].join.drop_first);
                 
                 break;
+            case "TOPIC":
+                topic_change(prefix.split_userinfo, parts[0], parts[1..$].join.drop_first);
+
+                break;
             case "CAP":
                 handle_capabilities(parts, context);
 
@@ -1181,6 +1185,11 @@ class IRCConnection
         Called when a metadata update occurs.
     +/
     void metadata_update(string target, string visibility, string key, string value) {}
+
+    /++
+        Called when a channel topic changes.
+    +/
+    void topic_change(User user, string channel, string newTopic) {}
 }
 
 /++
